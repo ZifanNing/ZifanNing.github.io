@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+
+
+<html lang="en">
+  
+
+    <head>
+      <meta charset="utf-8" />
+        
+      <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1, maximum-scale=1"
+      />
+      <title>Memory layout |  Zifan</title>
+  <meta name="generator" content="hexo-theme-ayer">
+      
+      <link rel="shortcut icon" href="/images/anonymous.svg" />
+       
+<link rel="stylesheet" href="/dist/main.css">
+
+      
+<link rel="stylesheet" href="/css/fonts/remixicon.css">
+
+      
+<link rel="stylesheet" href="/css/custom.css">
+ 
+      <script src="https://cdn.staticfile.org/pace/1.2.4/pace.min.js"></script>
+       
+ 
+
+      <link
+        rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/@sweetalert2/theme-bulma@5.0.1/bulma.min.css"
+      />
+      <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.0.19/dist/sweetalert2.min.js"></script>
+
+      <!-- mermaid -->
+      
+      <script src="https://cdn.staticfile.org/mermaid/8.14.0/mermaid.min.js"></script>
+      
+      <style>
+        .swal2-styled.swal2-confirm {
+          font-size: 1.6rem;
+        }
+      </style>
+    <!-- hexo injector head_end start -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.12.0/dist/katex.min.css">
+<!-- hexo injector head_end end --></head>
+  </html>
+</html>
+
+
+<body>
+  <div id="app">
+    
+      
+      <canvas width="1777" height="841"
+        style="position: fixed; left: 0px; top: 0px; z-index: 99999; pointer-events: none;"></canvas>
+      
+    <main class="content on">
+      <section class="outer">
+  <article
+  id="post-memory-layout"
+  class="article article-type-post"
+  itemscope
+  itemprop="blogPost"
+  data-scroll-reveal
+>
+  <div class="article-inner">
+    
+    <header class="article-header">
+       
+<h1 class="article-title sea-center" style="border-left:0" itemprop="name">
+  Memory layout
+</h1>
+ 
+
+      
+    </header>
+     
+    <div class="article-meta">
+      <a href="/2022/11/30/memory-layout/" class="article-date">
+  <time datetime="2022-11-30T15:45:22.000Z" itemprop="datePublished">2022-11-30</time>
+</a>   
+<div class="word_count">
+    <span class="post-time">
+        <span class="post-meta-item-icon">
+            <i class="ri-quill-pen-line"></i>
+            <span class="post-meta-item-text"> Word count:</span>
+            <span class="post-count">2.5k</span>
+        </span>
+    </span>
+
+    <span class="post-time">
+        &nbsp; | &nbsp;
+        <span class="post-meta-item-icon">
+            <i class="ri-book-open-line"></i>
+            <span class="post-meta-item-text"> Reading time≈</span>
+            <span class="post-count">9 min</span>
+        </span>
+    </span>
+</div>
+ 
+    </div>
+      
+    <div class="tocbot"></div>
+
+
+
+
+  
+    <div class="article-entry" itemprop="articleBody">
+       
+  <h1 id="内存布局"><a href="#内存布局" class="headerlink" title="内存布局"></a>内存布局</h1><p>根据经典的计算机冯洛伊曼模型，内存储存着计算过程中的代码和数据等。一般来说，内存是称之为DRAM，其数据是掉电易失的，我们为了简化编程过程，通常会把内存空间当作是连续的一大块，也就是说如果给每个内存小块进行编址的话，可以从0直接编码到最大的内存空间上限，我们通常把这个一大块连续的内存空间称之为<strong>虚拟内存空间</strong>，为什么称之为“虚拟”呢？那是因为物理硬件上的内存上不一定是连续的，其通过了一系列的映射才把可能是非连续的物理内存空间映射成了连续的虚拟内存空间，不过这个已经不在我们这篇文章的讨论范畴了，我们这里知道我们编程中，我们的变量，代码其实都是储存在这一大块的连续的虚拟内存空间就够了。</p>
+<p>当然，这么一大块内存空间为了能够被更好地管理，我们通常要对内存进行布局，也就是划分功能块，我们称之为 <strong>内存布局（memory layout）</strong> 我们这里以c语言为例。通常我们的划分是连续的，如Fig 1所示，通常我们把连续的虚拟内存空间，从低地址位到高地址位，划分为五大段(segment):</p>
+<ol>
+<li>文本段(test segment)</li>
+<li>初始化后的数据段(initialized data segment)</li>
+<li>未初始化的数据段(uninitialized data segment)</li>
+<li>栈(stack)</li>
+<li>堆(heap)</li>
+</ol>
+<p>我们接下来分别介绍。</p>
+<p><img src="/imgs/memoryLayoutC.jpg" alt="memoryLayoutC"></p>
+<div align='center'>
+    <b>
+        Fig 1. 内存布局的示意图。
+    </b>
+</div>
+
+
+<h2 id="文本段"><a href="#文本段" class="headerlink" title="文本段"></a>文本段</h2><p>文本段又被称之为代码段，其中包含着程序代码的可被执行的指令（CPU中的译码器将解释这些指令，从而实现数值计算或逻辑计算等）。我们发现文本段是从最低地址位开始分配的，那是因为，如果放在堆栈的后面，如果堆栈溢出(overflow)了，那么文本段就可能会被覆盖掉，造成不可预料的程序错误，因此为了避免这个问题，我们把文本段放在了最低位。</p>
+<p>通常来说，代码段中的代码是可以被共享的（感觉有点像动态链接的意思，多个程序动态链接同一个库的程序，而不尝试去进行集成在一起，因为集成在一起将会造成多个同样指令的多个副本，造成浪费），因此，对于同一个模块（同一个库），我们只需要在文本段保留一个副本就够了。文本段通常是只读的，从而避免程序在意外情况下改变了其中的指令。（如果真的造成了溢出，真的可能会不可预料地改变文本段的指令，这个通常是很危险的，会导致这个系统的崩溃）</p>
+<h2 id="初始化后的数据段"><a href="#初始化后的数据段" class="headerlink" title="初始化后的数据段"></a>初始化后的数据段</h2><p>初始化后的数据段(initialized data segment)，通常简称为数据段(data segment)。数据段中储存的是程序中的全局变量或者是静态变量，而这些变量是被程序员初始化过了的。注意到，数据段的数据并不意味着只是只读的，其中的变量可能在程序运行中被改变。数据段又可以被划分为初始化过了的只读区(initialized read-only area)和初始化过了的读写区(initialized read-write area)，这个由程序中的关键字进行修饰。举例而言：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">char</span> s[] = <span class="string">&quot;hello world&quot;</span>;</span><br></pre></td></tr></table></figure>
+<p>如果这个语句在函数之外，定义了一个全局的字符数组，其储存在了数据段的初始化过了的读写区。如果像是：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">char</span> *<span class="built_in">string</span> = <span class="string">&quot;hello world&quot;</span>;</span><br></pre></td></tr></table></figure>
+<p>那么，这个字符实体<code>&quot;hello world&quot;</code>将会被储存在初始化过了的只读区，但是其指针<code>&amp;string</code>本身储存在了读写区。</p>
+<h2 id="未初始化的数据段"><a href="#未初始化的数据段" class="headerlink" title="未初始化的数据段"></a>未初始化的数据段</h2><p>未初始化的数据段(Uninitialized data segment)，也被称之为<code>BSS</code>段，其名字以一个古老的汇编操作符命名，其代表了“以符号为始的块（Block Started by Symbol）”。在程序执行之前，在这个段的数据都会内核初始化成0。</p>
+<p>未被初始化的这些数据从初始化过的数据段（也即是Initialized data segment）的结尾处开始，其中包含着所有的全局变量和静态变量，注意到这些变量未曾在代码中进行任何的显式的初始化。例如：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">int</span> i; <span class="comment">// 未经过初始化的静态变量，将会储存在BSS中</span></span><br><span class="line"><span class="type">int</span> j; <span class="comment">// 定义的全局变量j，其未经过初始化，也是会储存在BSS中</span></span><br></pre></td></tr></table></figure>
+<h2 id="栈区"><a href="#栈区" class="headerlink" title="栈区"></a>栈区</h2><p>栈区（stack）用于储存自动变量，其里面是在函数每次被调用的时候，都会被保存的一些信息。每次当函数被调用的时候，一些信息，例如</p>
+<ol>
+<li>应该在何处返回的地址</li>
+<li>调用者的环境信息，比如一些寄存器信息等</li>
+</ol>
+<p>将会被储存在栈区中（保留现场信息）。这个被调用的函数则会在栈区中申请分配内存给函数里面定义的自动变量和临时变量以供使用。这个就是为什么在C语言中迭代函数可以工作的原因了，每次迭代函数都调用了其自身的时候，其会使用一个新的栈区内存，因此不同栈区内存之间的内容不会相互干扰，即便他们从源代码上看起来的确是同一个函数，但是他们的实际内存上的内容却得到了隔离。</p>
+<p>栈区（stack）一般是在堆区（heap）的邻边，并且栈区其数据地址的增长方式和堆区是相反的，也就是说堆区的数据按照初始化的顺序，可能是从<strong>低地址位到高地址位</strong>分配的， 而栈区的数据可能按照 <strong>从高地址位到低地址位</strong>的方向分配，这种策略减少了数据溢出造成的危害。当堆区的指针和栈区指针相碰时，我们容易知道，已经没有空余的内存可以分配了。（在现代大规模的地址空间和虚拟内存技术的帮助下，栈区和堆区可能被安置在任何地方，但是他们一般还是从相反的方向进行分配）</p>
+<p>栈区包含着程序栈（program stack），其是一个LIFO(Last In First Out)的结构，一般会被安置在内存的高地址位。在标准的x86结构计算机上，它朝着地址0（也就是地址起始点）方向增长；然而在其他的一些结构的计算机中，它朝着反方向增长。一个“栈区指针”寄存器将会一直跟踪着栈区的头部(top of the stack)，在每次数据压入栈区的时候，它将会自动地调整。为了一个函数而压入栈区的一系列值，我们称之为<strong>栈帧</strong>(stack frame)，一个栈帧至少要包括了返回地址，不然将会无法返回被调用函数，导致出错。</p>
+<h2 id="堆区"><a href="#堆区" class="headerlink" title="堆区"></a>堆区</h2><p>堆区（heap）是用于分配动态内存的段。我们用代码<code>malloc(), realloc(), new</code>等分配的内存都储存在堆区。堆区在BSS段的结尾处开始，并且其朝着高地址位的方向增长。正如我刚才所说的，堆区通过<code>malloc(),realloc(),free</code>等进行管理着内存的分配和释放，其可能会使用<code>brk</code>或者<code>sbrk</code>系统调用进行调整其大小（注意到<code>brk/sbrk</code>的使用和一个最小堆区并不足以满足<code>malloc/realloc/free</code>这些命令功能的完整要求，其也许还需要通过<code>mmap</code>内存映射去潜在地预定一些非连续的虚拟内存区域到进程的虚拟内存空间中）。堆区是被进程中的所有共享库和动态加载模组所共享的，比如动态链接库(<code>.dll, .so</code>)等。</p>
+<h1 id="例子"><a href="#例子" class="headerlink" title="例子"></a>例子</h1><p>现在有c语言代码如：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">// file name memory-layout.c</span><br><span class="line">#include &lt;stdio.h&gt; </span><br><span class="line">int main(void) </span><br><span class="line">&#123; </span><br><span class="line">    return 0; </span><br><span class="line">&#125; </span><br></pre></td></tr></table></figure>
+<p>我们可以通过指令<code>size</code>对其使用的各部分的内存进行报告，如下所示：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta prompt_">[narendra@CentOS]$ </span><span class="language-bash">gcc memory-layout.c -o memory-layout</span></span><br><span class="line"><span class="meta prompt_">[narendra@CentOS]$ </span><span class="language-bash">size memory-layout</span></span><br><span class="line">text       data        bss        dec        hex    filename</span><br><span class="line">960        248          8       1216        4c0    memory-layout</span><br></pre></td></tr></table></figure>
+<p>我们在原来代码的基础上添加一个全局变量，其未曾被初始化：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span> </span></span><br><span class="line">  </span><br><span class="line"><span class="type">int</span> global; <span class="comment">/* Uninitialized variable stored in bss*/</span></span><br><span class="line">  </span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">void</span>)</span> </span><br><span class="line">&#123; </span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>; </span><br><span class="line">&#125; </span><br></pre></td></tr></table></figure>
+<p>同样地我们观察其内存报告：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta prompt_">[narendra@CentOS]$ </span><span class="language-bash">gcc memory-layout.c -o memory-layout</span></span><br><span class="line"><span class="meta prompt_">[narendra@CentOS]$ </span><span class="language-bash">size memory-layout</span></span><br><span class="line">text       data        bss        dec        hex    filename</span><br><span class="line"> 960        248         12       1220        4c4    memory-layout</span><br></pre></td></tr></table></figure>
+<p>我们发现<code>BSS</code>区增大了4个字节，那个正是新定义的全局变量的大小。</p>
+<p>我们再添加一个未曾初始化的静态变量试试看：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span> </span></span><br><span class="line">  </span><br><span class="line"><span class="type">int</span> global; <span class="comment">/* Uninitialized variable stored in bss*/</span></span><br><span class="line">  </span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">void</span>)</span> </span><br><span class="line">&#123; </span><br><span class="line">    <span class="type">static</span> <span class="type">int</span> i; <span class="comment">/* Uninitialized static variable stored in bss */</span></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>; </span><br><span class="line">&#125; </span><br></pre></td></tr></table></figure>
+<p>同样观察报告，发现<code>BSS</code>区增大到了16.</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta prompt_">[narendra@CentOS]$ </span><span class="language-bash">gcc memory-layout.c -o memory-layout</span></span><br><span class="line"><span class="meta prompt_">[narendra@CentOS]$ </span><span class="language-bash">size memory-layout</span></span><br><span class="line">text       data        bss        dec        hex    filename</span><br><span class="line"> 960        248         16       1224        4c8    memory-layout</span><br></pre></td></tr></table></figure>
+<p>如果对这个静态变量进行初始化，那么其多出来的内存将会在数据段中，而不是在<code>BSS</code>段中：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span> </span></span><br><span class="line">  </span><br><span class="line"><span class="type">int</span> global; <span class="comment">/* Uninitialized variable stored in bss*/</span></span><br><span class="line">  </span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">void</span>)</span> </span><br><span class="line">&#123; </span><br><span class="line">    <span class="type">static</span> <span class="type">int</span> i = <span class="number">100</span>; <span class="comment">/* Initialized static variable stored in DS*/</span></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>; </span><br><span class="line">&#125; </span><br></pre></td></tr></table></figure>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta prompt_">[narendra@CentOS]$ </span><span class="language-bash">gcc memory-layout.c -o memory-layout</span></span><br><span class="line"><span class="meta prompt_">[narendra@CentOS]$ </span><span class="language-bash">size memory-layout</span></span><br><span class="line">text       data        bss        dec        hex    filename</span><br><span class="line">960         252         12       1224        4c8    memory-layout</span><br></pre></td></tr></table></figure>
+<h1 id="Reference"><a href="#Reference" class="headerlink" title="Reference"></a>Reference</h1><p>[1]. <a target="_blank" rel="noopener" href="https://www.geeksforgeeks.org/memory-layout-of-c-program/">https://www.geeksforgeeks.org/memory-layout-of-c-program/</a></p>
+<p>[2]. <a target="_blank" rel="noopener" href="https://www.geeksforgeeks.org/common-memory-pointer-related-bug-in-c-programs/">https://www.geeksforgeeks.org/common-memory-pointer-related-bug-in-c-programs/</a></p>
+<p>[3]. <a target="_blank" rel="noopener" href="https://www.tutorialspoint.com/compiler_design/index.htm">https://www.tutorialspoint.com/compiler_design/index.htm</a></p>
+ 
+      <!-- reward -->
+      
+      <div id="reword-out">
+        <div id="reward-btn">
+          Donate
+        </div>
+      </div>
+      
+    </div>
+    
+
+    <!-- copyright -->
+    
+    <div class="declare">
+      <ul class="post-copyright">
+        <li>
+          <i class="ri-copyright-line"></i>
+          <strong>Copyright： </strong>
+          
+          Copyright is owned by the author. For commercial reprints, please contact the author for authorization. For non-commercial reprints, please indicate the source.
+          
+        </li>
+      </ul>
+    </div>
+    
+    <footer class="article-footer">
+       
+<div class="share-btn">
+      <span class="share-sns share-outer">
+        <i class="ri-share-forward-line"></i>
+        分享
+      </span>
+      <div class="share-wrap">
+        <i class="arrow"></i>
+        <div class="share-icons">
+          
+          <a class="weibo share-sns" href="javascript:;" data-type="weibo">
+            <i class="ri-weibo-fill"></i>
+          </a>
+          <a class="weixin share-sns wxFab" href="javascript:;" data-type="weixin">
+            <i class="ri-wechat-fill"></i>
+          </a>
+          <a class="qq share-sns" href="javascript:;" data-type="qq">
+            <i class="ri-qq-fill"></i>
+          </a>
+          <a class="douban share-sns" href="javascript:;" data-type="douban">
+            <i class="ri-douban-line"></i>
+          </a>
+          <!-- <a class="qzone share-sns" href="javascript:;" data-type="qzone">
+            <i class="icon icon-qzone"></i>
+          </a> -->
+          
+          <a class="facebook share-sns" href="javascript:;" data-type="facebook">
+            <i class="ri-facebook-circle-fill"></i>
+          </a>
+          <a class="twitter share-sns" href="javascript:;" data-type="twitter">
+            <i class="ri-twitter-fill"></i>
+          </a>
+          <a class="google share-sns" href="javascript:;" data-type="google">
+            <i class="ri-google-fill"></i>
+          </a>
+        </div>
+      </div>
+</div>
+
+<div class="wx-share-modal">
+    <a class="modal-close" href="javascript:;"><i class="ri-close-circle-line"></i></a>
+    <p>扫一扫，分享到微信</p>
+    <div class="wx-qrcode">
+      <img src="//api.qrserver.com/v1/create-qr-code/?size=150x150&data=http://example.com/2022/11/30/memory-layout/" alt="微信分享二维码">
+    </div>
+</div>
+
+<div id="share-mask"></div>  
+  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/CS/" rel="tag">CS</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/blog/" rel="tag">blog</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/hide/" rel="tag">hide</a></li></ul>
+
+    </footer>
+  </div>
+
+   
+  <nav class="article-nav">
+    
+      <a href="/2023/04/03/MD-Gaussian-Distribution/" class="article-nav-link">
+        <strong class="article-nav-caption">上一篇</strong>
+        <div class="article-nav-title">
+          
+            MD Gaussian Distribution
+          
+        </div>
+      </a>
+    
+    
+      <a href="/2022/09/14/pytorch-stop-gradients/" class="article-nav-link">
+        <strong class="article-nav-caption">下一篇</strong>
+        <div class="article-nav-title">Pytorch stop gradients</div>
+      </a>
+    
+  </nav>
+
+  
+   
+  
+   
+    <script src="https://cdn.staticfile.org/twikoo/1.4.18/twikoo.all.min.js"></script>
+    <div id="twikoo" class="twikoo"></div>
+    <script>
+        twikoo.init({
+            envId: ""
+        })
+    </script>
+ 
+</article>
+
+</section>
+      <footer class="footer">
+  <div class="outer">
+    <ul>
+      <li>
+        Copyrights &copy;
+        2021-2023
+        <i class="ri-heart-fill heart_icon"></i> Zifan Ning
+      </li>
+    </ul>
+    <ul>
+      <li>
+        
+      </li>
+    </ul>
+    <ul>
+      <li>
+        
+        
+        <span>
+  <span><i class="ri-user-3-fill"></i>Visitors:<span id="busuanzi_value_site_uv"></span></span>
+  <span class="division">|</span>
+  <span><i class="ri-eye-fill"></i>Views:<span id="busuanzi_value_page_pv"></span></span>
+</span>
+        
+      </li>
+    </ul>
+    <ul>
+      
+    </ul>
+    <ul>
+      
+    </ul>
+    <ul>
+      <li>
+        <!-- cnzz统计 -->
+        
+      </li>
+    </ul>
+  </div>
+</footer>    
+    </main>
+    <div class="float_btns">
+      <div class="totop" id="totop">
+  <i class="ri-arrow-up-line"></i>
+</div>
+
+<div class="todark" id="todark">
+  <i class="ri-moon-line"></i>
+</div>
+
+    </div>
+    <aside class="sidebar on">
+      <button class="navbar-toggle"></button>
+<nav class="navbar">
+  
+  <div class="logo">
+    <a href="/"><img src="/images/anonymous.svg" alt="Zifan"></a>
+  </div>
+  
+  <ul class="nav nav-main">
+    
+    <li class="nav-item">
+      <a class="nav-item-link" href="/">Home</a>
+    </li>
+    
+    <li class="nav-item">
+      <a class="nav-item-link" href="/archives">Archives</a>
+    </li>
+    
+    <li class="nav-item">
+      <a class="nav-item-link" href="/tags/blog">Blogs</a>
+    </li>
+    
+    <li class="nav-item">
+      <a class="nav-item-link" href="/tags/project">Projects</a>
+    </li>
+    
+    <li class="nav-item">
+      <a class="nav-item-link" href="/tags/photos">Photos</a>
+    </li>
+    
+    <li class="nav-item">
+      <a class="nav-item-link" href="/friends">Friends</a>
+    </li>
+    
+    <li class="nav-item">
+      <a class="nav-item-link" href="/about">About</a>
+    </li>
+    
+  </ul>
+</nav>
+<nav class="navbar navbar-bottom">
+  <ul class="nav">
+    <li class="nav-item">
+      
+      <a class="nav-item-link nav-item-search"  title="Search">
+        <i class="ri-search-line"></i>
+      </a>
+      
+      
+      <a class="nav-item-link" target="_blank" href="/atom.xml" title="RSS Feed">
+        <i class="ri-rss-line"></i>
+      </a>
+      
+    </li>
+  </ul>
+</nav>
+<div class="search-form-wrap">
+  <div class="local-search local-search-plugin">
+  <input type="search" id="local-search-input" class="local-search-input" placeholder="Search...">
+  <div id="local-search-result" class="local-search-result"></div>
+</div>
+</div>
+    </aside>
+    <div id="mask"></div>
+
+<!-- #reward -->
+<div id="reward">
+  <span class="close"><i class="ri-close-line"></i></span>
+  <p class="reward-p"><i class="ri-cup-line"></i>请我喝杯咖啡吧~</p>
+  <div class="reward-box">
+    
+    <div class="reward-item">
+      <img class="reward-img" src="/images/alipay.jpg">
+      <span class="reward-type">支付宝</span>
+    </div>
+    
+    
+    <div class="reward-item">
+      <img class="reward-img" src="/images/wechat.jpg">
+      <span class="reward-type">微信</span>
+    </div>
+    
+  </div>
+</div>
+    
+<script src="/js/jquery-3.6.0.min.js"></script>
+ 
+<script src="/js/lazyload.min.js"></script>
+
+<!-- Tocbot -->
+ 
+<script src="/js/tocbot.min.js"></script>
+
+<script>
+  tocbot.init({
+    tocSelector: ".tocbot",
+    contentSelector: ".article-entry",
+    headingSelector: "h1, h2, h3, h4, h5, h6",
+    hasInnerContainers: true,
+    scrollSmooth: true,
+    scrollContainer: "main",
+    positionFixedSelector: ".tocbot",
+    positionFixedClass: "is-position-fixed",
+    fixedSidebarOffset: "auto",
+  });
+</script>
+
+<script src="https://cdn.staticfile.org/jquery-modal/0.9.2/jquery.modal.min.js"></script>
+<link
+  rel="stylesheet"
+  href="https://cdn.staticfile.org/jquery-modal/0.9.2/jquery.modal.min.css"
+/>
+<script src="https://cdn.staticfile.org/justifiedGallery/3.8.1/js/jquery.justifiedGallery.min.js"></script>
+
+<script src="/dist/main.js"></script>
+
+<!-- ImageViewer -->
+ <!-- Root element of PhotoSwipe. Must have class pswp. -->
+<div class="pswp" tabindex="-1" role="dialog" aria-hidden="true">
+
+    <!-- Background of PhotoSwipe. 
+         It's a separate element as animating opacity is faster than rgba(). -->
+    <div class="pswp__bg"></div>
+
+    <!-- Slides wrapper with overflow:hidden. -->
+    <div class="pswp__scroll-wrap">
+
+        <!-- Container that holds slides. 
+            PhotoSwipe keeps only 3 of them in the DOM to save memory.
+            Don't modify these 3 pswp__item elements, data is added later on. -->
+        <div class="pswp__container">
+            <div class="pswp__item"></div>
+            <div class="pswp__item"></div>
+            <div class="pswp__item"></div>
+        </div>
+
+        <!-- Default (PhotoSwipeUI_Default) interface on top of sliding area. Can be changed. -->
+        <div class="pswp__ui pswp__ui--hidden">
+
+            <div class="pswp__top-bar">
+
+                <!--  Controls are self-explanatory. Order can be changed. -->
+
+                <div class="pswp__counter"></div>
+
+                <button class="pswp__button pswp__button--close" title="Close (Esc)"></button>
+
+                <button class="pswp__button pswp__button--share" style="display:none" title="Share"></button>
+
+                <button class="pswp__button pswp__button--fs" title="Toggle fullscreen"></button>
+
+                <button class="pswp__button pswp__button--zoom" title="Zoom in/out"></button>
+
+                <!-- Preloader demo http://codepen.io/dimsemenov/pen/yyBWoR -->
+                <!-- element will get class pswp__preloader--active when preloader is running -->
+                <div class="pswp__preloader">
+                    <div class="pswp__preloader__icn">
+                        <div class="pswp__preloader__cut">
+                            <div class="pswp__preloader__donut"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pswp__share-modal pswp__share-modal--hidden pswp__single-tap">
+                <div class="pswp__share-tooltip"></div>
+            </div>
+
+            <button class="pswp__button pswp__button--arrow--left" title="Previous (arrow left)">
+            </button>
+
+            <button class="pswp__button pswp__button--arrow--right" title="Next (arrow right)">
+            </button>
+
+            <div class="pswp__caption">
+                <div class="pswp__caption__center"></div>
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<link rel="stylesheet" href="https://cdn.staticfile.org/photoswipe/4.1.3/photoswipe.min.css">
+<link rel="stylesheet" href="https://cdn.staticfile.org/photoswipe/4.1.3/default-skin/default-skin.min.css">
+<script src="https://cdn.staticfile.org/photoswipe/4.1.3/photoswipe.min.js"></script>
+<script src="https://cdn.staticfile.org/photoswipe/4.1.3/photoswipe-ui-default.min.js"></script>
+
+<script>
+    function viewer_init() {
+        let pswpElement = document.querySelectorAll('.pswp')[0];
+        let $imgArr = document.querySelectorAll(('.article-entry img:not(.reward-img)'))
+
+        $imgArr.forEach(($em, i) => {
+            $em.onclick = () => {
+                // slider展开状态
+                // todo: 这样不好，后面改成状态
+                if (document.querySelector('.left-col.show')) return
+                let items = []
+                $imgArr.forEach(($em2, i2) => {
+                    let img = $em2.getAttribute('data-idx', i2)
+                    let src = $em2.getAttribute('data-target') || $em2.getAttribute('src')
+                    let title = $em2.getAttribute('alt')
+                    // 获得原图尺寸
+                    const image = new Image()
+                    image.src = src
+                    items.push({
+                        src: src,
+                        w: image.width || $em2.width,
+                        h: image.height || $em2.height,
+                        title: title
+                    })
+                })
+                var gallery = new PhotoSwipe(pswpElement, PhotoSwipeUI_Default, items, {
+                    index: parseInt(i)
+                });
+                gallery.init()
+            }
+        })
+    }
+    viewer_init()
+</script> 
+<!-- MathJax -->
+ <script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+      tex2jax: {
+          inlineMath: [ ['$','$'], ["\\(","\\)"]  ],
+          processEscapes: true,
+          skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+  });
+
+  MathJax.Hub.Queue(function() {
+      var all = MathJax.Hub.getAllJax(), i;
+      for(i=0; i < all.length; i += 1) {
+          all[i].SourceElement().parentNode.className += ' has-jax';
+      }
+  });
+</script>
+
+<script src="https://cdn.staticfile.org/mathjax/2.7.7/MathJax.js"></script>
+<script src="https://cdn.staticfile.org/mathjax/2.7.7/config/TeX-AMS-MML_HTMLorMML-full.js"></script>
+<script>
+  var ayerConfig = {
+    mathjax: true,
+  };
+</script>
+
+<!-- Katex -->
+
+<!-- busuanzi  -->
+ 
+<script src="/js/busuanzi-2.3.pure.min.js"></script>
+ 
+<!-- ClickLove -->
+
+<!-- ClickBoom1 -->
+
+<!-- ClickBoom2 -->
+ 
+<script src="/js/clickBoom2.js"></script>
+ 
+<!-- CodeCopy -->
+ 
+<link rel="stylesheet" href="/css/clipboard.css">
+ <script src="https://cdn.staticfile.org/clipboard.js/2.0.10/clipboard.min.js"></script>
+<script>
+  function wait(callback, seconds) {
+    var timelag = null;
+    timelag = window.setTimeout(callback, seconds);
+  }
+  !function (e, t, a) {
+    var initCopyCode = function(){
+      var copyHtml = '';
+      copyHtml += '<button class="btn-copy" data-clipboard-snippet="">';
+      copyHtml += '<i class="ri-file-copy-2-line"></i><span>COPY</span>';
+      copyHtml += '</button>';
+      $(".highlight .code pre").before(copyHtml);
+      $(".article pre code").before(copyHtml);
+      var clipboard = new ClipboardJS('.btn-copy', {
+        target: function(trigger) {
+          return trigger.nextElementSibling;
+        }
+      });
+      clipboard.on('success', function(e) {
+        let $btn = $(e.trigger);
+        $btn.addClass('copied');
+        let $icon = $($btn.find('i'));
+        $icon.removeClass('ri-file-copy-2-line');
+        $icon.addClass('ri-checkbox-circle-line');
+        let $span = $($btn.find('span'));
+        $span[0].innerText = 'COPIED';
+        
+        wait(function () { // 等待两秒钟后恢复
+          $icon.removeClass('ri-checkbox-circle-line');
+          $icon.addClass('ri-file-copy-2-line');
+          $span[0].innerText = 'COPY';
+        }, 2000);
+      });
+      clipboard.on('error', function(e) {
+        e.clearSelection();
+        let $btn = $(e.trigger);
+        $btn.addClass('copy-failed');
+        let $icon = $($btn.find('i'));
+        $icon.removeClass('ri-file-copy-2-line');
+        $icon.addClass('ri-time-line');
+        let $span = $($btn.find('span'));
+        $span[0].innerText = 'COPY FAILED';
+        
+        wait(function () { // 等待两秒钟后恢复
+          $icon.removeClass('ri-time-line');
+          $icon.addClass('ri-file-copy-2-line');
+          $span[0].innerText = 'COPY';
+        }, 2000);
+      });
+    }
+    initCopyCode();
+  }(window, document);
+</script>
+ 
+<!-- CanvasBackground -->
+ 
+<script src="/js/dz.js"></script>
+ 
+<script>
+  if (window.mermaid) {
+    mermaid.initialize({ theme: "forest" });
+  }
+</script>
+
+
+    
+    <div id="music">
+    
+    
+    
+    <iframe frameborder="no" border="1" marginwidth="0" marginheight="0" width="200" height="86"
+        src="//music.163.com/outchain/player?type=2&id=438462712&auto=1&height=66"></iframe>
+</div>
+
+<style>
+    #music {
+        position: fixed;
+        right: 15px;
+        bottom: 0;
+        z-index: 998;
+    }
+</style>
+    
+    
+
+  </div>
+</body>
+
+</html>

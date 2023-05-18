@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+
+
+<html lang="en">
+  
+
+    <head>
+      <meta charset="utf-8" />
+        
+      <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1, maximum-scale=1"
+      />
+      <title>Pytorch stop gradients |  Zifan</title>
+  <meta name="generator" content="hexo-theme-ayer">
+      
+      <link rel="shortcut icon" href="/images/anonymous.svg" />
+       
+<link rel="stylesheet" href="/dist/main.css">
+
+      
+<link rel="stylesheet" href="/css/fonts/remixicon.css">
+
+      
+<link rel="stylesheet" href="/css/custom.css">
+ 
+      <script src="https://cdn.staticfile.org/pace/1.2.4/pace.min.js"></script>
+       
+ 
+
+      <link
+        rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/@sweetalert2/theme-bulma@5.0.1/bulma.min.css"
+      />
+      <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.0.19/dist/sweetalert2.min.js"></script>
+
+      <!-- mermaid -->
+      
+      <script src="https://cdn.staticfile.org/mermaid/8.14.0/mermaid.min.js"></script>
+      
+      <style>
+        .swal2-styled.swal2-confirm {
+          font-size: 1.6rem;
+        }
+      </style>
+    <!-- hexo injector head_end start -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.12.0/dist/katex.min.css">
+<!-- hexo injector head_end end --></head>
+  </html>
+</html>
+
+
+<body>
+  <div id="app">
+    
+      
+      <canvas width="1777" height="841"
+        style="position: fixed; left: 0px; top: 0px; z-index: 99999; pointer-events: none;"></canvas>
+      
+    <main class="content on">
+      <section class="outer">
+  <article
+  id="post-pytorch-stop-gradients"
+  class="article article-type-post"
+  itemscope
+  itemprop="blogPost"
+  data-scroll-reveal
+>
+  <div class="article-inner">
+    
+    <header class="article-header">
+       
+<h1 class="article-title sea-center" style="border-left:0" itemprop="name">
+  Pytorch stop gradients
+</h1>
+ 
+
+      
+    </header>
+     
+    <div class="article-meta">
+      <a href="/2022/09/14/pytorch-stop-gradients/" class="article-date">
+  <time datetime="2022-09-14T12:33:27.000Z" itemprop="datePublished">2022-09-14</time>
+</a>   
+<div class="word_count">
+    <span class="post-time">
+        <span class="post-meta-item-icon">
+            <i class="ri-quill-pen-line"></i>
+            <span class="post-meta-item-text"> Word count:</span>
+            <span class="post-count">3.5k</span>
+        </span>
+    </span>
+
+    <span class="post-time">
+        &nbsp; | &nbsp;
+        <span class="post-meta-item-icon">
+            <i class="ri-book-open-line"></i>
+            <span class="post-meta-item-text"> Reading time≈</span>
+            <span class="post-count">14 min</span>
+        </span>
+    </span>
+</div>
+ 
+    </div>
+      
+    <div class="tocbot"></div>
+
+
+
+
+  
+    <div class="article-entry" itemprop="articleBody">
+       
+  <h1 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h1><p>在现在的深度模型软件框架中，如TensorFlow和PyTorch等等，都是实现了自动求导机制的。在深度学习中，有时候我们需要对某些模块的梯度流进行精确地控制，包括是否允许某个模块的参数更新，更新地幅度多少，是否每个模块更新地幅度都是一样的。这些问题非常常见，但是在实践中却很容易出错，我们在这篇文章中尝试对第一个子问题，也就是如果精确控制某些模型是否允许其参数更新，进行总结。</p>
+<h1 id="为什么我们要控制梯度流"><a href="#为什么我们要控制梯度流" class="headerlink" title="为什么我们要控制梯度流"></a>为什么我们要控制梯度流</h1><p>为什么我们要控制梯度流？这个答案有很多个，但是都可以归结为<strong>避免不需要更新的模型模块被参数更新</strong>。 我们在深度模型训练过程中，很可能存在多个loss，比如GAN对抗生成网络，存在<code>G_loss</code>和<code>D_loss</code>，通常来说，我们通过<code>D_loss</code>只希望更新判别器(Discriminator)，而生成网络(Generator)并不需要，也不能被更新；生成网络只在通过<code>G_loss</code>学习的情况下，才能被更新。这个时候，如果我们不控制梯度流，那么我们在训练<code>D_loss</code>的时候，我们的前端网络<code>Generator</code>和<code>CNN</code>难免也会被一起训练，这个是我们不期望发生的。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">graph LR;</span><br><span class="line">	input--&gt;CNN</span><br><span class="line">	CNN --&gt;Generator;</span><br><span class="line">	Generator--&gt;G_loss;</span><br><span class="line">	Generator--&gt;Discriminator;</span><br><span class="line">	Discriminator--&gt;D_loss</span><br></pre></td></tr></table></figure>
+<div align='center'>
+<b>
+Fig 1.1 典型的GAN结构，由生成器和判别器组成。
+</b>
+</div>
+
+
+<p>多个loss的协调只是其中一种情况，还有一种情况是：我们在进行模型迁移的过程中，经常采用某些已经预训练好了的特征提取网络，比如<code>VGG, ResNet</code>之类的，在适用到具体的业务数据集时候，特别是小数据集的时候，我们可能会希望这些前端的特征提取器不要更新，而只是更新末端的分类器（因为数据集很小的情况下，如果贸然更新特征提取器，很可能出现不期望的严重过拟合，这个时候的合适做法应该是更新分类器优先），这个时候我们也可以考虑停止特征提取器的梯度流。</p>
+<p>这些情况还有很多，我们在实践中发现，精确控制某些模块的梯度流是非常重要的。笔者在本文中打算讨论的是对<strong>某些模块的梯度流的截断</strong>，而并没有讨论对某些模块梯度流的比例缩放，或者说最细粒度的梯度流控制，后者我们将会在后文中讨论。</p>
+<p>一般来说，截断梯度流可以有几种思路：</p>
+<ol>
+<li><p>停止计算某个模块的梯度，在优化过程中这个模块还是会被考虑更新，然而因为梯度已经被截断了，因此不能被更新。</p>
+<ul>
+<li>设置<code>tensor.detach()</code>： 完全截断之前的梯度流</li>
+<li>设置参数的<code>requires_grad</code>属性：单纯不计算当前设置参数的梯度，不影响梯度流</li>
+<li><code>torch.no_grad()</code>：效果类似于设置参数的<code>requires_grad</code>属性</li>
+</ul>
+</li>
+<li>在优化器中设置不更新某个模块的参数，这个模块的参数在优化过程中就不会得到更新，然而这个模块的梯度在反向传播时仍然可能被计算。</li>
+</ol>
+<p>我们后面分别按照这两大类思路进行讨论。</p>
+<hr>
+<h1 id="停止计算某个模块的梯度"><a href="#停止计算某个模块的梯度" class="headerlink" title="停止计算某个模块的梯度"></a>停止计算某个模块的梯度</h1><p>在本大类方法中，主要涉及到了<code>tensor.detach()</code>和<code>requires_grad</code>的设置，这两种都无非是对某些模块，某些节点变量设置了是否需要梯度的选项。</p>
+<h2 id="tensor-detach"><a href="#tensor-detach" class="headerlink" title="tensor.detach()"></a>tensor.detach()</h2><p><code>tensor.detach()</code>的作用是：</p>
+<blockquote>
+<p><code>tensor.detach()</code>会创建一个与原来张量共享内存空间的一个新的张量，不同的是，这个新的张量将不会有梯度流流过，这个新的张量就像是从原先的计算图中脱离(detach)出来一样，对这个新的张量进行的任何操作都不会影响到原先的计算图了。因此对此新的张量进行的梯度流也不会流过原先的计算图，从而起到了截断的目的。</p>
+</blockquote>
+<p>这样说可能不够清楚，我们举个例子。众所周知，我们的pytorch是动态计算图网络，正是因为计算图的存在，才能实现自动求导机制。考虑一个表达式：</p>
+<script type="math/tex; mode=display">
+y = x^2 \\
+z = 2 * y\\
+w = z^3</script><p>如果用计算图表示则如Fig 2.1所示。</p>
+<p><img src="/imgs/com_graph.png." alt="com_graph"></p>
+<div align='center'>
+<b>
+Fig 2.1 计算图示例
+</b>
+</div>
+
+
+<p>考虑在这个式子的基础上，加上一个分支：</p>
+<script type="math/tex; mode=display">
+p = z \\
+q = 2.0 \\
+pq = p * q</script><p>那么计算图就变成了：</p>
+<p>​    <img src="/imgs/branch.png" alt="branch"></p>
+<div align='center'>
+<b>
+Fig 2.2 添加了新的分支后的计算图
+</b>
+</div>
+
+
+<p>如果我们不<code>detach()</code> 中间的变量<code>z</code>，分别对<code>pq</code>和<code>w</code>进行反向传播梯度，我们会有：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">x = torch.tensor(([<span class="number">1.0</span>]),requires_grad=<span class="literal">True</span>)</span><br><span class="line">y = x**<span class="number">2</span></span><br><span class="line">z = <span class="number">2</span>*y</span><br><span class="line">w= z**<span class="number">3</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># This is the subpath</span></span><br><span class="line"><span class="comment"># Do not use detach()</span></span><br><span class="line">p = z</span><br><span class="line">q = torch.tensor(([<span class="number">2.0</span>]), requires_grad=<span class="literal">True</span>)</span><br><span class="line">pq = p*q</span><br><span class="line">pq.backward(retain_graph=<span class="literal">True</span>)</span><br><span class="line"></span><br><span class="line">w.backward()</span><br><span class="line"><span class="built_in">print</span>(x.grad)</span><br></pre></td></tr></table></figure>
+<p>输出结果为<code>tensor([56.])</code>。我们发现，这个结果是吧<code>pq</code>和<code>w</code>的反向传播结果都进行了考虑的，也就是新增加的分支的反向传播影响了原先主要枝干的梯度流。这个时候我们用<code>detach()</code>可以把<code>p</code>给从原先计算图中脱离出来，使得其不会干扰原先的计算图的梯度流，如：</p>
+<p><img src="/imgs/detach.png" alt="detach"></p>
+<div align='center'>
+<b>
+Fig 2.3 用了detach之后的计算图
+</b>
+</div>
+
+
+<p>那么，代码就对应地修改为：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">x = torch.tensor(([<span class="number">1.0</span>]),requires_grad=<span class="literal">True</span>)</span><br><span class="line">y = x**<span class="number">2</span></span><br><span class="line">z = <span class="number">2</span>*y</span><br><span class="line">w= z**<span class="number">3</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># detach it, so the gradient w.r.t `p` does not effect `z`!</span></span><br><span class="line">p = z.detach()</span><br><span class="line">q = torch.tensor(([<span class="number">2.0</span>]), requires_grad=<span class="literal">True</span>)</span><br><span class="line">pq = p*q</span><br><span class="line">pq.backward(retain_graph=<span class="literal">True</span>)</span><br><span class="line">w.backward()</span><br><span class="line"><span class="built_in">print</span>(x.grad)</span><br></pre></td></tr></table></figure>
+<p>这个时候，因为分支的梯度流已经影响不到原先的计算图梯度流了，因此输出为<code>tensor([48.])</code>。</p>
+<p>这只是个计算图的简单例子，在实际模块中，我们同样可以这样用，举个GAN的例子，代码如：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">backward_D</span>(<span class="params">self</span>):</span><br><span class="line">    <span class="comment"># Fake</span></span><br><span class="line">    <span class="comment"># stop backprop to the generator by detaching fake_B</span></span><br><span class="line">    fake_AB = self.fake_B</span><br><span class="line">    <span class="comment"># fake_AB = self.fake_AB_pool.query(torch.cat((self.real_A, self.fake_B), 1))</span></span><br><span class="line">    self.pred_fake = self.netD.forward(fake_AB.detach())</span><br><span class="line">    self.loss_D_fake = self.criterionGAN(self.pred_fake, <span class="literal">False</span>)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># Real</span></span><br><span class="line">    real_AB = self.real_B <span class="comment"># GroundTruth</span></span><br><span class="line">    <span class="comment"># real_AB = torch.cat((self.real_A, self.real_B), 1)</span></span><br><span class="line">    self.pred_real = self.netD.forward(real_AB)</span><br><span class="line">    self.loss_D_real = self.criterionGAN(self.pred_real, <span class="literal">True</span>)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># Combined loss</span></span><br><span class="line">    self.loss_D = (self.loss_D_fake + self.loss_D_real) * <span class="number">0.5</span></span><br><span class="line"></span><br><span class="line">    self.loss_D.backward()</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">backward_G</span>(<span class="params">self</span>):</span><br><span class="line">    <span class="comment"># First, G(A) should fake the discriminator</span></span><br><span class="line">    fake_AB = self.fake_B</span><br><span class="line">    pred_fake = self.netD.forward(fake_AB)</span><br><span class="line">    self.loss_G_GAN = self.criterionGAN(pred_fake, <span class="literal">True</span>)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># Second, G(A) = B</span></span><br><span class="line">    self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_A</span><br><span class="line"></span><br><span class="line">    self.loss_G = self.loss_G_GAN + self.loss_G_L1</span><br><span class="line"></span><br><span class="line">    self.loss_G.backward()</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">forward</span>(<span class="params">self</span>):</span><br><span class="line">    self.real_A = Variable(self.input_A)</span><br><span class="line">    self.fake_B = self.netG.forward(self.real_A)</span><br><span class="line">    self.real_B = Variable(self.input_B)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 先调用 forward, 再 D backward， 更新D之后； 再G backward， 再更新G</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">optimize_parameters</span>(<span class="params">self</span>):</span><br><span class="line">    self.forward()</span><br><span class="line"></span><br><span class="line">    self.optimizer_D.zero_grad()</span><br><span class="line">    self.backward_D()</span><br><span class="line">    self.optimizer_D.step()</span><br><span class="line"></span><br><span class="line">    self.optimizer_G.zero_grad()</span><br><span class="line">    self.backward_G()</span><br><span class="line">    self.optimizer_G.step()</span><br></pre></td></tr></table></figure>
+<p>我们注意看第六行，<code>self.pred_fake = self.netD.forward(fake_AB.detach())</code>使得在反向传播<code>D_loss</code>的时候不会更新到<code>self.netG</code>，因为<code>fake_AB</code>是由<code>self.netG</code>生成的，代码如<code>self.fake_B = self.netG.forward(self.real_A)</code>。</p>
+<h2 id="设置requires-grad"><a href="#设置requires-grad" class="headerlink" title="设置requires_grad"></a>设置requires_grad</h2><p><code>tensor.detach()</code>是截断梯度流的一个好办法，但是在设置了<code>detach()</code>的张量之前的所有模块，梯度流都不能回流了（不包括这个张量本身，这个张量已经脱离原先的计算图了），如以下代码所示：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">x = torch.randn(<span class="number">2</span>, <span class="number">2</span>)</span><br><span class="line">x.requires_grad = <span class="literal">True</span></span><br><span class="line"></span><br><span class="line">lin0 = nn.Linear(<span class="number">2</span>, <span class="number">2</span>)</span><br><span class="line">lin1 = nn.Linear(<span class="number">2</span>, <span class="number">2</span>)</span><br><span class="line">lin2 = nn.Linear(<span class="number">2</span>, <span class="number">2</span>)</span><br><span class="line">lin3 = nn.Linear(<span class="number">2</span>, <span class="number">2</span>)</span><br><span class="line">x1 = lin0(x)</span><br><span class="line">x2 = lin1(x1)</span><br><span class="line">x2 = x2.detach() <span class="comment"># 此处设置了detach，之前的所有梯度流都不会回传了</span></span><br><span class="line">x3 = lin2(x2)</span><br><span class="line">x4 = lin3(x3)</span><br><span class="line">x4.<span class="built_in">sum</span>().backward()</span><br><span class="line"><span class="built_in">print</span>(lin0.weight.grad)</span><br><span class="line"><span class="built_in">print</span>(lin1.weight.grad)</span><br><span class="line"><span class="built_in">print</span>(lin2.weight.grad)</span><br><span class="line"><span class="built_in">print</span>(lin3.weight.grad)</span><br></pre></td></tr></table></figure>
+<p>输出为:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">None</span><br><span class="line">None</span><br><span class="line">tensor([[-0.7784, -0.7018],</span><br><span class="line">        [-0.4261, -0.3842]])</span><br><span class="line">tensor([[ 0.5509, -0.0386],</span><br><span class="line">        [ 0.5509, -0.0386]])</span><br></pre></td></tr></table></figure>
+<p>我们发现<code>lin0.weight.grad</code>和<code>lin0.weight.grad</code>都为<code>None</code>了，因为通过脱离中间张量，原先计算图已经和当前回传的梯度流脱离关系了。</p>
+<p>这样有时候不够理想，因为我们可能存在只需要某些中间模块不计算梯度，但是梯度仍然需要回传的情况，在这种情况下，如下图所示，我们可能只需要不计算<code>B_net</code>的梯度，但是我们又希望计算<code>A_net</code>和<code>C_net</code>的梯度，这个时候怎么办呢？当然，通过<code>detach()</code>这个方法是不能用了。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">graph LR;</span><br><span class="line">	input--&gt;A_net;</span><br><span class="line">	A_net--&gt;B_net;</span><br><span class="line">	B_net--&gt;C_net;</span><br></pre></td></tr></table></figure>
+<p>事实上，我们可以通过设置张量的<code>requires_grad</code>属性来设置某个张量是否计算梯度，而这个不会影响梯度回传，只会影响当前的张量。修改上面的代码，我们有：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">x = torch.randn(<span class="number">2</span>, <span class="number">2</span>)</span><br><span class="line">x.requires_grad = <span class="literal">True</span></span><br><span class="line"></span><br><span class="line">lin0 = nn.Linear(<span class="number">2</span>, <span class="number">2</span>)</span><br><span class="line">lin1 = nn.Linear(<span class="number">2</span>, <span class="number">2</span>)</span><br><span class="line">lin2 = nn.Linear(<span class="number">2</span>, <span class="number">2</span>)</span><br><span class="line">lin3 = nn.Linear(<span class="number">2</span>, <span class="number">2</span>)</span><br><span class="line">x1 = lin0(x)</span><br><span class="line">x2 = lin1(x1)</span><br><span class="line"><span class="keyword">for</span> p <span class="keyword">in</span> lin2.parameters():</span><br><span class="line">    p.requires_grad = <span class="literal">False</span></span><br><span class="line">x3 = lin2(x2)</span><br><span class="line">x4 = lin3(x3)</span><br><span class="line">x4.<span class="built_in">sum</span>().backward()</span><br><span class="line"><span class="built_in">print</span>(lin0.weight.grad)</span><br><span class="line"><span class="built_in">print</span>(lin1.weight.grad)</span><br><span class="line"><span class="built_in">print</span>(lin2.weight.grad)</span><br><span class="line"><span class="built_in">print</span>(lin3.weight.grad)</span><br></pre></td></tr></table></figure>
+<p>输出为:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">tensor([[-0.0117,  0.9976],</span><br><span class="line">        [-0.0080,  0.6855]])</span><br><span class="line">tensor([[-0.0075, -0.0521],</span><br><span class="line">        [-0.0391, -0.2708]])</span><br><span class="line">None</span><br><span class="line">tensor([[0.0523, 0.5429],</span><br><span class="line">        [0.0523, 0.5429]])</span><br></pre></td></tr></table></figure>
+<p>啊哈，正是我们想要的结果，只有设置了<code>requires_grad=False</code>的模块没有计算梯度，但是梯度流又能够回传。</p>
+<p>另外，设置<code>requires_grad</code>经常用在对输入变量和输入的标签进行新建的时候使用，如：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> mat,label <span class="keyword">in</span> dataloader:</span><br><span class="line">    mat = Variable(mat, requires_grad=<span class="literal">False</span>)</span><br><span class="line">    label = Variable(mat,requires_grad=<span class="literal">False</span>)</span><br><span class="line">    ...</span><br></pre></td></tr></table></figure>
+<p>当然，通过把所有前端网络都设置<code>requires_grad=False</code>，我们可以实现类似于<code>detach()</code>的效果，也就是把该节点之前的所有梯度流回传截断。以VGG16为例子，如果我们只需要训练其分类器，而固定住其特征提取器网络的参数，我们可以采用将前端网络的所有参数的<code>requires_grad</code>设置为<code>False</code>，因为这个时候完全不需要梯度流的回传，只需要前向计算即可。代码如：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">model = torchvision.models.vgg16(pretrained=<span class="literal">True</span>)</span><br><span class="line"><span class="keyword">for</span> param <span class="keyword">in</span> model.features.parameters():</span><br><span class="line">    param.requires_grad = <span class="literal">False</span></span><br></pre></td></tr></table></figure>
+<h2 id="torch-no-grad"><a href="#torch-no-grad" class="headerlink" title="torch.no_grad()"></a>torch.no_grad()</h2><p>在对训练好的模型进行评估测试时，我们同样不需要训练，自然也不需要梯度流信息了。我们可以把所有参数的<code>requires_grad</code>属性设置为<code>False</code>，事实上，我们常用<code>torch.no_grad()</code>上下文管理器达到这个目的。即便输入的张量属性是<code>requires_grad=True</code>,   <code>torch.no_grad()</code>可以将所有的中间计算结果的该属性<strong>临时</strong>转变为<code>False</code>。</p>
+<p>如例子所示：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">x = torch.randn(<span class="number">3</span>, requires_grad=<span class="literal">True</span>)</span><br><span class="line">x1 = (x**<span class="number">2</span>)</span><br><span class="line"><span class="built_in">print</span>(x.requires_grad)</span><br><span class="line"><span class="built_in">print</span>(x1.requires_grad)</span><br><span class="line"></span><br><span class="line"><span class="keyword">with</span> torch.no_grad():</span><br><span class="line">    x2 = (x**<span class="number">2</span>)</span><br><span class="line">    <span class="built_in">print</span>(x1.requires_grad)</span><br><span class="line">    <span class="built_in">print</span>(x2.requires_grad)</span><br></pre></td></tr></table></figure>
+<p>输出为：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="literal">True</span></span><br><span class="line"><span class="literal">True</span></span><br><span class="line"><span class="literal">True</span></span><br><span class="line"><span class="literal">False</span></span><br></pre></td></tr></table></figure>
+<p>注意到只是在<code>torch.no_grad()</code>上下文管理器范围内计算的中间变量的属性<code>requires_grad</code>才会被转变为<code>False</code>，在该管理器外面计算的并不会变化。</p>
+<p>不过和单纯手动设置<code>requires_grad=False</code>不同的是，在设置了<code>torch.no_grad()</code>之前的层是不能回传梯度的，延续之前的例子如：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">x = torch.randn(<span class="number">2</span>, <span class="number">2</span>)</span><br><span class="line">x.requires_grad = <span class="literal">True</span></span><br><span class="line"></span><br><span class="line">lin0 = nn.Linear(<span class="number">2</span>, <span class="number">2</span>)</span><br><span class="line">lin1 = nn.Linear(<span class="number">2</span>, <span class="number">2</span>)</span><br><span class="line">lin2 = nn.Linear(<span class="number">2</span>, <span class="number">2</span>)</span><br><span class="line">lin3 = nn.Linear(<span class="number">2</span>, <span class="number">2</span>)</span><br><span class="line">x1 = lin0(x)</span><br><span class="line"><span class="keyword">with</span> torch.no_grad():</span><br><span class="line">    x2 = lin1(x1)</span><br><span class="line">x3 = lin2(x2)</span><br><span class="line">x4 = lin3(x3)</span><br><span class="line">x4.<span class="built_in">sum</span>().backward()</span><br><span class="line"><span class="built_in">print</span>(lin0.weight.grad)</span><br><span class="line"><span class="built_in">print</span>(lin1.weight.grad)</span><br><span class="line"><span class="built_in">print</span>(lin2.weight.grad)</span><br><span class="line"><span class="built_in">print</span>(lin3.weight.grad)</span><br></pre></td></tr></table></figure>
+<p>输出为：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">None</span><br><span class="line">None</span><br><span class="line">tensor([[-0.0926, -0.0945],</span><br><span class="line">        [-0.2793, -0.2851]])</span><br><span class="line">tensor([[-0.5216,  0.8088],</span><br><span class="line">        [-0.5216,  0.8088]])</span><br></pre></td></tr></table></figure>
+<p>此处如果我们打印<code>lin1.weight.requires_grad</code>我们会发现其为<code>True</code>，但是其中间变量<code>x2.requires_grad=False</code>。</p>
+<p>一般来说在实践中，我们的<code>torch.no_grad()</code>通常会在测试模型的时候使用，而不会选择在选择性训练某些模块时使用[1]，例子如：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">model.train()</span><br><span class="line"><span class="comment"># here train the model, just skip the codes</span></span><br><span class="line">model.<span class="built_in">eval</span>() <span class="comment"># here we start to evaluate the model</span></span><br><span class="line"><span class="keyword">with</span> torch.no_grad():</span><br><span class="line">	<span class="keyword">for</span> each <span class="keyword">in</span> eval_data:</span><br><span class="line">		data, label = each</span><br><span class="line">		logit = model(data)</span><br><span class="line">		... <span class="comment"># here we just skip the codes</span></span><br></pre></td></tr></table></figure>
+<h2 id="注意"><a href="#注意" class="headerlink" title="注意"></a>注意</h2><p>通过设置属性<code>requires_grad=False</code>的方法（包括<code>torch.no_grad()</code>）很多时候可以避免保存中间计算的buffer，从而减少对内存的需求，但是这个也是视情况而定的，比如如[2]的所示</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">graph LR;</span><br><span class="line">	input--&gt;A_net;</span><br><span class="line">	A_net--&gt;B_net;</span><br><span class="line">	B_net--&gt;C_net;</span><br></pre></td></tr></table></figure>
+<p>如果我们不需要<code>A_net</code>的梯度，我们设置所有<code>A_net</code>的<code>requires_grad=False</code>，因为后续的<code>B_net</code>和<code>C_net</code>的梯度流并不依赖于<code>A_net</code>，因此不计算<code>A_net</code>的梯度流意味着不需要保存这个中间计算结果，因此减少了内存。</p>
+<p>但是如果我们不需要的是<code>B_net</code>的梯度，而需要<code>A_net</code>和<code>C_net</code>的梯度，那么问题就不一样了，因为<code>A_net</code>梯度依赖于<code>B_net</code>的梯度，就算不计算<code>B_net</code>的梯度，也需要保存回传过程中<code>B_net</code>中间计算的结果，因此内存并不会被减少。</p>
+<p>但是通过<code>tensor.detach()</code>的方法并不会减少内存使用，这一点需要注意。</p>
+<hr>
+<h1 id="设置优化器的更新列表"><a href="#设置优化器的更新列表" class="headerlink" title="设置优化器的更新列表"></a>设置优化器的更新列表</h1><p>这个方法更为直接，即便某个模块进行了梯度计算，我只需要在优化器中指定不更新该模块的参数，那么这个模块就和没有计算梯度有着同样的效果了。如以下代码所示:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">model</span>(nn.Module):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="built_in">super</span>().__init__()</span><br><span class="line">        self.model_1 = nn.linear(<span class="number">10</span>,<span class="number">10</span>)</span><br><span class="line">        self.model_2 = nn.linear(<span class="number">10</span>,<span class="number">20</span>)</span><br><span class="line">        self.fc = nn.linear(<span class="number">20</span>,<span class="number">2</span>)</span><br><span class="line">        self.relu = nn.ReLU()</span><br><span class="line">       </span><br><span class="line">   	<span class="keyword">def</span> <span class="title function_">foward</span>(<span class="params">inputv</span>):</span><br><span class="line">        h = self.model_1(inputv)</span><br><span class="line">        h = self.relu(h)</span><br><span class="line">        h = self.model_2(inputv)</span><br><span class="line">        h = self.relu(h)</span><br><span class="line">        <span class="keyword">return</span> self.fc(h)</span><br></pre></td></tr></table></figure>
+<p>在设置优化器时，我们只需要更新<code>fc层</code>和<code>model_2层</code>，那么则是:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">curr_model = model()</span><br><span class="line">opt_list = <span class="built_in">list</span>(curr_model.fc.parameters())+<span class="built_in">list</span>(curr_model.model_2.parameters())</span><br><span class="line">optimizer = torch.optim.SGD(opt_list, lr=<span class="number">1e-4</span>)</span><br></pre></td></tr></table></figure>
+<p>当然你也可以通过以下的方法去设置每一个层的学习率来避免不需要更新的层的更新[3]：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">optim.SGD([</span><br><span class="line">                &#123;<span class="string">&#x27;params&#x27;</span>: model.model_1.parameters()&#125;,</span><br><span class="line">                &#123;<span class="string">&#x27;params&#x27;</span>: model.mode_2.parameters(), <span class="string">&#x27;lr&#x27;</span>: <span class="number">0</span>&#125;,</span><br><span class="line">    		   &#123;<span class="string">&#x27;params&#x27;</span>: model.fc.parameters(), <span class="string">&#x27;lr&#x27;</span>: <span class="number">0</span>&#125;</span><br><span class="line">            ], lr=<span class="number">1e-2</span>, momentum=<span class="number">0.9</span>)</span><br></pre></td></tr></table></figure>
+<p>这种方法不需要更改模型本身结构，也不需要添加模型的额外节点，但是需要保存梯度的中间变量，并且将会计算不需要计算的模块的梯度（即便最后优化的时候不考虑更新），这样浪费了内存和计算时间。</p>
+<h1 id="Reference"><a href="#Reference" class="headerlink" title="Reference"></a>Reference</h1><p>[1]. <a target="_blank" rel="noopener" href="https://blog.csdn.net/LoseInVain/article/details/82916163">https://blog.csdn.net/LoseInVain/article/details/82916163</a></p>
+<p>[2]. <a target="_blank" rel="noopener" href="https://discuss.pytorch.org/t/requires-grad-false-does-not-save-memory/21936">https://discuss.pytorch.org/t/requires-grad-false-does-not-save-memory/21936</a></p>
+<p>[3]. <a target="_blank" rel="noopener" href="https://pytorch.org/docs/stable/optim.html#module-torch.optim">https://pytorch.org/docs/stable/optim.html#module-torch.optim</a></p>
+ 
+      <!-- reward -->
+      
+      <div id="reword-out">
+        <div id="reward-btn">
+          Donate
+        </div>
+      </div>
+      
+    </div>
+    
+
+    <!-- copyright -->
+    
+    <div class="declare">
+      <ul class="post-copyright">
+        <li>
+          <i class="ri-copyright-line"></i>
+          <strong>Copyright： </strong>
+          
+          Copyright is owned by the author. For commercial reprints, please contact the author for authorization. For non-commercial reprints, please indicate the source.
+          
+        </li>
+      </ul>
+    </div>
+    
+    <footer class="article-footer">
+       
+<div class="share-btn">
+      <span class="share-sns share-outer">
+        <i class="ri-share-forward-line"></i>
+        分享
+      </span>
+      <div class="share-wrap">
+        <i class="arrow"></i>
+        <div class="share-icons">
+          
+          <a class="weibo share-sns" href="javascript:;" data-type="weibo">
+            <i class="ri-weibo-fill"></i>
+          </a>
+          <a class="weixin share-sns wxFab" href="javascript:;" data-type="weixin">
+            <i class="ri-wechat-fill"></i>
+          </a>
+          <a class="qq share-sns" href="javascript:;" data-type="qq">
+            <i class="ri-qq-fill"></i>
+          </a>
+          <a class="douban share-sns" href="javascript:;" data-type="douban">
+            <i class="ri-douban-line"></i>
+          </a>
+          <!-- <a class="qzone share-sns" href="javascript:;" data-type="qzone">
+            <i class="icon icon-qzone"></i>
+          </a> -->
+          
+          <a class="facebook share-sns" href="javascript:;" data-type="facebook">
+            <i class="ri-facebook-circle-fill"></i>
+          </a>
+          <a class="twitter share-sns" href="javascript:;" data-type="twitter">
+            <i class="ri-twitter-fill"></i>
+          </a>
+          <a class="google share-sns" href="javascript:;" data-type="google">
+            <i class="ri-google-fill"></i>
+          </a>
+        </div>
+      </div>
+</div>
+
+<div class="wx-share-modal">
+    <a class="modal-close" href="javascript:;"><i class="ri-close-circle-line"></i></a>
+    <p>扫一扫，分享到微信</p>
+    <div class="wx-qrcode">
+      <img src="//api.qrserver.com/v1/create-qr-code/?size=150x150&data=http://example.com/2022/09/14/pytorch-stop-gradients/" alt="微信分享二维码">
+    </div>
+</div>
+
+<div id="share-mask"></div>  
+  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/ANN/" rel="tag">ANN</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/blog/" rel="tag">blog</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/hide/" rel="tag">hide</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/torch/" rel="tag">torch</a></li></ul>
+
+    </footer>
+  </div>
+
+   
+  <nav class="article-nav">
+    
+      <a href="/2022/11/30/memory-layout/" class="article-nav-link">
+        <strong class="article-nav-caption">上一篇</strong>
+        <div class="article-nav-title">
+          
+            Memory layout
+          
+        </div>
+      </a>
+    
+    
+      <a href="/2022/08/04/Shift-GCN/" class="article-nav-link">
+        <strong class="article-nav-caption">下一篇</strong>
+        <div class="article-nav-title">Shift GCN</div>
+      </a>
+    
+  </nav>
+
+  
+   
+  
+   
+    <script src="https://cdn.staticfile.org/twikoo/1.4.18/twikoo.all.min.js"></script>
+    <div id="twikoo" class="twikoo"></div>
+    <script>
+        twikoo.init({
+            envId: ""
+        })
+    </script>
+ 
+</article>
+
+</section>
+      <footer class="footer">
+  <div class="outer">
+    <ul>
+      <li>
+        Copyrights &copy;
+        2021-2023
+        <i class="ri-heart-fill heart_icon"></i> Zifan Ning
+      </li>
+    </ul>
+    <ul>
+      <li>
+        
+      </li>
+    </ul>
+    <ul>
+      <li>
+        
+        
+        <span>
+  <span><i class="ri-user-3-fill"></i>Visitors:<span id="busuanzi_value_site_uv"></span></span>
+  <span class="division">|</span>
+  <span><i class="ri-eye-fill"></i>Views:<span id="busuanzi_value_page_pv"></span></span>
+</span>
+        
+      </li>
+    </ul>
+    <ul>
+      
+    </ul>
+    <ul>
+      
+    </ul>
+    <ul>
+      <li>
+        <!-- cnzz统计 -->
+        
+      </li>
+    </ul>
+  </div>
+</footer>    
+    </main>
+    <div class="float_btns">
+      <div class="totop" id="totop">
+  <i class="ri-arrow-up-line"></i>
+</div>
+
+<div class="todark" id="todark">
+  <i class="ri-moon-line"></i>
+</div>
+
+    </div>
+    <aside class="sidebar on">
+      <button class="navbar-toggle"></button>
+<nav class="navbar">
+  
+  <div class="logo">
+    <a href="/"><img src="/images/anonymous.svg" alt="Zifan"></a>
+  </div>
+  
+  <ul class="nav nav-main">
+    
+    <li class="nav-item">
+      <a class="nav-item-link" href="/">Home</a>
+    </li>
+    
+    <li class="nav-item">
+      <a class="nav-item-link" href="/archives">Archives</a>
+    </li>
+    
+    <li class="nav-item">
+      <a class="nav-item-link" href="/tags/blog">Blogs</a>
+    </li>
+    
+    <li class="nav-item">
+      <a class="nav-item-link" href="/tags/project">Projects</a>
+    </li>
+    
+    <li class="nav-item">
+      <a class="nav-item-link" href="/tags/photos">Photos</a>
+    </li>
+    
+    <li class="nav-item">
+      <a class="nav-item-link" href="/friends">Friends</a>
+    </li>
+    
+    <li class="nav-item">
+      <a class="nav-item-link" href="/about">About</a>
+    </li>
+    
+  </ul>
+</nav>
+<nav class="navbar navbar-bottom">
+  <ul class="nav">
+    <li class="nav-item">
+      
+      <a class="nav-item-link nav-item-search"  title="Search">
+        <i class="ri-search-line"></i>
+      </a>
+      
+      
+      <a class="nav-item-link" target="_blank" href="/atom.xml" title="RSS Feed">
+        <i class="ri-rss-line"></i>
+      </a>
+      
+    </li>
+  </ul>
+</nav>
+<div class="search-form-wrap">
+  <div class="local-search local-search-plugin">
+  <input type="search" id="local-search-input" class="local-search-input" placeholder="Search...">
+  <div id="local-search-result" class="local-search-result"></div>
+</div>
+</div>
+    </aside>
+    <div id="mask"></div>
+
+<!-- #reward -->
+<div id="reward">
+  <span class="close"><i class="ri-close-line"></i></span>
+  <p class="reward-p"><i class="ri-cup-line"></i>请我喝杯咖啡吧~</p>
+  <div class="reward-box">
+    
+    <div class="reward-item">
+      <img class="reward-img" src="/images/alipay.jpg">
+      <span class="reward-type">支付宝</span>
+    </div>
+    
+    
+    <div class="reward-item">
+      <img class="reward-img" src="/images/wechat.jpg">
+      <span class="reward-type">微信</span>
+    </div>
+    
+  </div>
+</div>
+    
+<script src="/js/jquery-3.6.0.min.js"></script>
+ 
+<script src="/js/lazyload.min.js"></script>
+
+<!-- Tocbot -->
+ 
+<script src="/js/tocbot.min.js"></script>
+
+<script>
+  tocbot.init({
+    tocSelector: ".tocbot",
+    contentSelector: ".article-entry",
+    headingSelector: "h1, h2, h3, h4, h5, h6",
+    hasInnerContainers: true,
+    scrollSmooth: true,
+    scrollContainer: "main",
+    positionFixedSelector: ".tocbot",
+    positionFixedClass: "is-position-fixed",
+    fixedSidebarOffset: "auto",
+  });
+</script>
+
+<script src="https://cdn.staticfile.org/jquery-modal/0.9.2/jquery.modal.min.js"></script>
+<link
+  rel="stylesheet"
+  href="https://cdn.staticfile.org/jquery-modal/0.9.2/jquery.modal.min.css"
+/>
+<script src="https://cdn.staticfile.org/justifiedGallery/3.8.1/js/jquery.justifiedGallery.min.js"></script>
+
+<script src="/dist/main.js"></script>
+
+<!-- ImageViewer -->
+ <!-- Root element of PhotoSwipe. Must have class pswp. -->
+<div class="pswp" tabindex="-1" role="dialog" aria-hidden="true">
+
+    <!-- Background of PhotoSwipe. 
+         It's a separate element as animating opacity is faster than rgba(). -->
+    <div class="pswp__bg"></div>
+
+    <!-- Slides wrapper with overflow:hidden. -->
+    <div class="pswp__scroll-wrap">
+
+        <!-- Container that holds slides. 
+            PhotoSwipe keeps only 3 of them in the DOM to save memory.
+            Don't modify these 3 pswp__item elements, data is added later on. -->
+        <div class="pswp__container">
+            <div class="pswp__item"></div>
+            <div class="pswp__item"></div>
+            <div class="pswp__item"></div>
+        </div>
+
+        <!-- Default (PhotoSwipeUI_Default) interface on top of sliding area. Can be changed. -->
+        <div class="pswp__ui pswp__ui--hidden">
+
+            <div class="pswp__top-bar">
+
+                <!--  Controls are self-explanatory. Order can be changed. -->
+
+                <div class="pswp__counter"></div>
+
+                <button class="pswp__button pswp__button--close" title="Close (Esc)"></button>
+
+                <button class="pswp__button pswp__button--share" style="display:none" title="Share"></button>
+
+                <button class="pswp__button pswp__button--fs" title="Toggle fullscreen"></button>
+
+                <button class="pswp__button pswp__button--zoom" title="Zoom in/out"></button>
+
+                <!-- Preloader demo http://codepen.io/dimsemenov/pen/yyBWoR -->
+                <!-- element will get class pswp__preloader--active when preloader is running -->
+                <div class="pswp__preloader">
+                    <div class="pswp__preloader__icn">
+                        <div class="pswp__preloader__cut">
+                            <div class="pswp__preloader__donut"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pswp__share-modal pswp__share-modal--hidden pswp__single-tap">
+                <div class="pswp__share-tooltip"></div>
+            </div>
+
+            <button class="pswp__button pswp__button--arrow--left" title="Previous (arrow left)">
+            </button>
+
+            <button class="pswp__button pswp__button--arrow--right" title="Next (arrow right)">
+            </button>
+
+            <div class="pswp__caption">
+                <div class="pswp__caption__center"></div>
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<link rel="stylesheet" href="https://cdn.staticfile.org/photoswipe/4.1.3/photoswipe.min.css">
+<link rel="stylesheet" href="https://cdn.staticfile.org/photoswipe/4.1.3/default-skin/default-skin.min.css">
+<script src="https://cdn.staticfile.org/photoswipe/4.1.3/photoswipe.min.js"></script>
+<script src="https://cdn.staticfile.org/photoswipe/4.1.3/photoswipe-ui-default.min.js"></script>
+
+<script>
+    function viewer_init() {
+        let pswpElement = document.querySelectorAll('.pswp')[0];
+        let $imgArr = document.querySelectorAll(('.article-entry img:not(.reward-img)'))
+
+        $imgArr.forEach(($em, i) => {
+            $em.onclick = () => {
+                // slider展开状态
+                // todo: 这样不好，后面改成状态
+                if (document.querySelector('.left-col.show')) return
+                let items = []
+                $imgArr.forEach(($em2, i2) => {
+                    let img = $em2.getAttribute('data-idx', i2)
+                    let src = $em2.getAttribute('data-target') || $em2.getAttribute('src')
+                    let title = $em2.getAttribute('alt')
+                    // 获得原图尺寸
+                    const image = new Image()
+                    image.src = src
+                    items.push({
+                        src: src,
+                        w: image.width || $em2.width,
+                        h: image.height || $em2.height,
+                        title: title
+                    })
+                })
+                var gallery = new PhotoSwipe(pswpElement, PhotoSwipeUI_Default, items, {
+                    index: parseInt(i)
+                });
+                gallery.init()
+            }
+        })
+    }
+    viewer_init()
+</script> 
+<!-- MathJax -->
+ <script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+      tex2jax: {
+          inlineMath: [ ['$','$'], ["\\(","\\)"]  ],
+          processEscapes: true,
+          skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+  });
+
+  MathJax.Hub.Queue(function() {
+      var all = MathJax.Hub.getAllJax(), i;
+      for(i=0; i < all.length; i += 1) {
+          all[i].SourceElement().parentNode.className += ' has-jax';
+      }
+  });
+</script>
+
+<script src="https://cdn.staticfile.org/mathjax/2.7.7/MathJax.js"></script>
+<script src="https://cdn.staticfile.org/mathjax/2.7.7/config/TeX-AMS-MML_HTMLorMML-full.js"></script>
+<script>
+  var ayerConfig = {
+    mathjax: true,
+  };
+</script>
+
+<!-- Katex -->
+
+<!-- busuanzi  -->
+ 
+<script src="/js/busuanzi-2.3.pure.min.js"></script>
+ 
+<!-- ClickLove -->
+
+<!-- ClickBoom1 -->
+
+<!-- ClickBoom2 -->
+ 
+<script src="/js/clickBoom2.js"></script>
+ 
+<!-- CodeCopy -->
+ 
+<link rel="stylesheet" href="/css/clipboard.css">
+ <script src="https://cdn.staticfile.org/clipboard.js/2.0.10/clipboard.min.js"></script>
+<script>
+  function wait(callback, seconds) {
+    var timelag = null;
+    timelag = window.setTimeout(callback, seconds);
+  }
+  !function (e, t, a) {
+    var initCopyCode = function(){
+      var copyHtml = '';
+      copyHtml += '<button class="btn-copy" data-clipboard-snippet="">';
+      copyHtml += '<i class="ri-file-copy-2-line"></i><span>COPY</span>';
+      copyHtml += '</button>';
+      $(".highlight .code pre").before(copyHtml);
+      $(".article pre code").before(copyHtml);
+      var clipboard = new ClipboardJS('.btn-copy', {
+        target: function(trigger) {
+          return trigger.nextElementSibling;
+        }
+      });
+      clipboard.on('success', function(e) {
+        let $btn = $(e.trigger);
+        $btn.addClass('copied');
+        let $icon = $($btn.find('i'));
+        $icon.removeClass('ri-file-copy-2-line');
+        $icon.addClass('ri-checkbox-circle-line');
+        let $span = $($btn.find('span'));
+        $span[0].innerText = 'COPIED';
+        
+        wait(function () { // 等待两秒钟后恢复
+          $icon.removeClass('ri-checkbox-circle-line');
+          $icon.addClass('ri-file-copy-2-line');
+          $span[0].innerText = 'COPY';
+        }, 2000);
+      });
+      clipboard.on('error', function(e) {
+        e.clearSelection();
+        let $btn = $(e.trigger);
+        $btn.addClass('copy-failed');
+        let $icon = $($btn.find('i'));
+        $icon.removeClass('ri-file-copy-2-line');
+        $icon.addClass('ri-time-line');
+        let $span = $($btn.find('span'));
+        $span[0].innerText = 'COPY FAILED';
+        
+        wait(function () { // 等待两秒钟后恢复
+          $icon.removeClass('ri-time-line');
+          $icon.addClass('ri-file-copy-2-line');
+          $span[0].innerText = 'COPY';
+        }, 2000);
+      });
+    }
+    initCopyCode();
+  }(window, document);
+</script>
+ 
+<!-- CanvasBackground -->
+ 
+<script src="/js/dz.js"></script>
+ 
+<script>
+  if (window.mermaid) {
+    mermaid.initialize({ theme: "forest" });
+  }
+</script>
+
+
+    
+    <div id="music">
+    
+    
+    
+    <iframe frameborder="no" border="1" marginwidth="0" marginheight="0" width="200" height="86"
+        src="//music.163.com/outchain/player?type=2&id=438462712&auto=1&height=66"></iframe>
+</div>
+
+<style>
+    #music {
+        position: fixed;
+        right: 15px;
+        bottom: 0;
+        z-index: 998;
+    }
+</style>
+    
+    
+
+  </div>
+</body>
+
+</html>
